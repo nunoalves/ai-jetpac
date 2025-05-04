@@ -1,12 +1,10 @@
 import socket
 import time
-import signal
 import sys
 
 # Settings
 HOST = 'localhost'
 PORT = 10000
-DELAY_BETWEEN_QUERIES_IN_SEC=0.2
 
 # All these addresses are taken from  Jetpac's disassembly:
 # https://phillipeaton.github.io/jetpac-disassembly/
@@ -31,15 +29,7 @@ X_SPEED_SLOT_OFFSET          = 5
 Y_SPEED_SLOT_OFFSET          = 6 
 SPRITE_HEIGHT_SLOT_OFFSET    = 7
 
-running = True
 
-# Handle Ctrl+C to exit cleanly
-def handle_sigint(sig, frame):
-    global running
-    print("\nTerminating...")
-    running = False
-
-signal.signal(signal.SIGINT, handle_sigint)
 
 def wait_for_prompt(sock):
     buffer = ""
@@ -61,13 +51,16 @@ def send_command(sock, command):
     sock.sendall((command + "\n").encode())
     return wait_for_prompt(sock)
 
-def get_byte_from_memory(sock, address): 
-   
+def get_byte_from_memory(sock, address):
     command = f"read-memory {address} 1"
     result = send_command(sock, command)    
 
+    # Outcome from this is a 2 char string with the byte data in hex
     if (len(result) != 2):
         return None
+ 
+    # Convert it into a integer
+    result = int(result,16)
  
     return(result)
 
@@ -103,21 +96,21 @@ def print_game_state(state):
     
     # Jetman
     if state.jetman["x"] is not None and state.jetman["y"] is not None and state.jetman["x_speed"] is not None and state.jetman["y_speed"] is not None:
-        out.append(f"Jetman:({state.jetman['x']:2},{state.jetman['y']:2},{state.jetman['x_speed']:2},{state.jetman['y_speed']:2})")
+        out.append(f"Jetman:({state.jetman['x']:3},{state.jetman['y']:3},{state.jetman['x_speed']:3},{state.jetman['y_speed']:3})")
     else:
-        out.append("Jetman:(--,--,--,--)")
+        out.append("Jetman:(---,---,---,---)")
     
     # Lives
     if state.lives is not None:
         out.append(f"Lives:{state.lives}")
     else:
-        out.append("Lives:??")
+        out.append("Lives:?")
 
     # Level
     if state.level is not None:
         out.append(f"Lvl:{state.level}")
     else:
-        out.append("Lvl:??")
+        out.append("Lvl:?")
 
     # Aliens
     alien_strs = []
@@ -127,9 +120,9 @@ def print_game_state(state):
         x_speed = alien["x_speed"]
         y_speed = alien["y_speed"]
         if x is not None and y is not None and x_speed is not None and y_speed is not None:
-            alien_strs.append(f"{i+1}:({x:2},{y:2},{x_speed:2},{y_speed:2})")
+            alien_strs.append(f"{i+1}:({x:3},{y:3},{x_speed:3},{y_speed:3})")
         else:
-            alien_strs.append(f"{i+1}:(--,--,--,--)")
+            alien_strs.append(f"{i+1}:(---,---,---,---)")
     
     out.append("Aliens: " + " ".join(alien_strs))
 
@@ -137,19 +130,21 @@ def print_game_state(state):
     print(" | ".join(out))    
 
 
+# Sample code that prints the game state indefinitely every 0.2 seconds.
+# Ctrl+C stops the loop—albeit not gracefully.
 def main():
     print(f"Connecting to ZEsarUX at {HOST}:{PORT}...")
     with socket.create_connection((HOST, PORT)) as sock:
         print("Connected.")        
-        while running:
+        while True:
             try:
-                # Here is a sample line to get the contents of a specific location  
+                # Here is how we can get the contents of a specific location  
                 #jetman_lives = get_byte_from_memory(sock, JETMAN_LIVES_ADDR)
                 
                 state = read_game_state(sock)
                 print_game_state(state)
                                   
-                time.sleep(DELAY_BETWEEN_QUERIES_IN_SEC)
+                time.sleep(0.2)
             except Exception as e:
                 print(f"Error: {e}")
                 break
