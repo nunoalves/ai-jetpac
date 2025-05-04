@@ -15,5 +15,5 @@ AI agent that plays Jetpac on the ZX Spectrum using behavior trees. A hobby proj
 2. **Start ZEsarUX with the remote debugger**  
    `zesarux --enable-remoteprotocol`
    
-3. **Run python scripts**
+3. **Run python scripts**  
    On separate window run python scripts...
