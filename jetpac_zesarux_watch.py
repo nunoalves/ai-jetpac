@@ -11,8 +11,8 @@ DELAY_BETWEEN_QUERIES_IN_SEC=0.2
 # All these addresses are taken from  Jetpac's disassembly:
 # https://phillipeaton.github.io/jetpac-disassembly/
 JETMAN_LIVES_ADDR = 0x5DF1
-
 JETMAN_SLOT_ADDR  = 0x5D00
+GAME_LEVEL_ADDR   = 0x5DF0
 ALIEN_SLOTS_ADDR  = [
     0x5D50,
     0x5D58,
@@ -73,22 +73,28 @@ def get_byte_from_memory(sock, address):
 
 class GameState:
     def __init__(self):
-        self.jetman = {"x": None, "y": None}
-        self.aliens = [{"x": None, "y": None} for _ in range(len(ALIEN_SLOTS_ADDR))]
+        self.jetman = {"x": None, "y": None, "x_speed": None, "y_speed": None}
+        self.aliens = [{"x": None, "y": None, "x_speed": None, "y_speed": None} for _ in range(len(ALIEN_SLOTS_ADDR))]
         self.lives = None
+        self.level = None
         
 def read_game_state(sock):
     state = GameState()
     
     # Jetman data
     state.lives = get_byte_from_memory(sock, JETMAN_LIVES_ADDR)
+    state.level = get_byte_from_memory(sock, GAME_LEVEL_ADDR)    
     state.jetman["x"] = get_byte_from_memory(sock, JETMAN_SLOT_ADDR + X_POS_SLOT_OFFSET)
     state.jetman["y"] = get_byte_from_memory(sock, JETMAN_SLOT_ADDR + Y_POS_SLOT_OFFSET)
+    state.jetman["x_speed"] = get_byte_from_memory(sock, JETMAN_SLOT_ADDR + X_SPEED_SLOT_OFFSET)
+    state.jetman["y_speed"] = get_byte_from_memory(sock, JETMAN_SLOT_ADDR + Y_SPEED_SLOT_OFFSET)
 
     # Alien positions
     for i, base_addr in enumerate(ALIEN_SLOTS_ADDR):
         state.aliens[i]["x"] = get_byte_from_memory(sock, base_addr + X_POS_SLOT_OFFSET)
         state.aliens[i]["y"] = get_byte_from_memory(sock, base_addr + Y_POS_SLOT_OFFSET)
+        state.aliens[i]["x_speed"] = get_byte_from_memory(sock, base_addr + X_SPEED_SLOT_OFFSET)
+        state.aliens[i]["y_speed"] = get_byte_from_memory(sock, base_addr + Y_SPEED_SLOT_OFFSET)
 
     return state
 
@@ -96,10 +102,10 @@ def print_game_state(state):
     out = []
     
     # Jetman
-    if state.jetman["x"] is not None and state.jetman["y"] is not None:
-        out.append(f"Jetman:({state.jetman['x']:2},{state.jetman['y']:2})")
+    if state.jetman["x"] is not None and state.jetman["y"] is not None and state.jetman["x_speed"] is not None and state.jetman["y_speed"] is not None:
+        out.append(f"Jetman:({state.jetman['x']:2},{state.jetman['y']:2},{state.jetman['x_speed']:2},{state.jetman['y_speed']:2})")
     else:
-        out.append("Jetman:(--,--)")
+        out.append("Jetman:(--,--,--,--)")
     
     # Lives
     if state.lives is not None:
@@ -107,17 +113,25 @@ def print_game_state(state):
     else:
         out.append("Lives:??")
 
+    # Level
+    if state.level is not None:
+        out.append(f"Lvl:{state.level}")
+    else:
+        out.append("Lvl:??")
+
     # Aliens
     alien_strs = []
     for i, alien in enumerate(state.aliens):
         x = alien["x"]
         y = alien["y"]
-        if x is not None and y is not None:
-            alien_strs.append(f"{i+1}:({x:2},{y:2})")
+        x_speed = alien["x_speed"]
+        y_speed = alien["y_speed"]
+        if x is not None and y is not None and x_speed is not None and y_speed is not None:
+            alien_strs.append(f"{i+1}:({x:2},{y:2},{x_speed:2},{y_speed:2})")
         else:
-            alien_strs.append(f"{i+1}:(--,--)")
+            alien_strs.append(f"{i+1}:(--,--,--,--)")
     
-    out.append("Aliens: " + "  ".join(alien_strs))
+    out.append("Aliens: " + " ".join(alien_strs))
 
     # Final output
     print(" | ".join(out))    
