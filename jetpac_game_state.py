@@ -21,15 +21,22 @@ ALIEN_SLOTS_ADDR  = [
 ]
 
 DIRECTION_SLOT_OFFSET        = 0
-X_POS_SLOT_OFFSET            = 1 # (0x00=full-right 0xFF=full-left)
-Y_POS_SLOT_OFFSET            = 2 # (0x29=full-up    0xB7=full-down)
+X_POS_SLOT_OFFSET            = 1 # (0=jetman full-left  255=jetmanfull-right)
+Y_POS_SLOT_OFFSET            = 2 # (183=(jetman full-up 41=jetman full-down)
 COLOR_ATTR_SLOT_OFFSET       = 3
 MOVING_DIRECTION_SLOT_OFFSET = 4
 X_SPEED_SLOT_OFFSET          = 5 
 Y_SPEED_SLOT_OFFSET          = 6 
 SPRITE_HEIGHT_SLOT_OFFSET    = 7
 
-
+# These are the game control keys. During the game itself we want to continously press keys (hence the event)
+EVENT_KEYS = {
+    "left":  98,
+    "right": 110,
+    "up":    113,
+    "fire":  97,
+    "start": 53,
+}
 
 def wait_for_prompt(sock):
     buffer = ""
@@ -51,6 +58,12 @@ def send_command(sock, command):
     sock.sendall((command + "\n").encode())
     return wait_for_prompt(sock)
 
+def send_key(sock, name, pressed=True):
+    code = EVENT_KEYS[name]
+    cmd = f"send-keys-event {code} {int(pressed)}"
+
+    send_command(sock, cmd)    
+
 def get_byte_from_memory(sock, address):
     command = f"read-memory {address} 1"
     result = send_command(sock, command)    
@@ -71,25 +84,51 @@ class GameState:
         self.lives = None
         self.level = None
         
-def read_game_state(sock):
-    state = GameState()
-    
-    # Jetman data
-    state.lives = get_byte_from_memory(sock, JETMAN_LIVES_ADDR)
-    state.level = get_byte_from_memory(sock, GAME_LEVEL_ADDR)    
-    state.jetman["x"] = get_byte_from_memory(sock, JETMAN_SLOT_ADDR + X_POS_SLOT_OFFSET)
-    state.jetman["y"] = get_byte_from_memory(sock, JETMAN_SLOT_ADDR + Y_POS_SLOT_OFFSET)
-    state.jetman["x_speed"] = get_byte_from_memory(sock, JETMAN_SLOT_ADDR + X_SPEED_SLOT_OFFSET)
-    state.jetman["y_speed"] = get_byte_from_memory(sock, JETMAN_SLOT_ADDR + Y_SPEED_SLOT_OFFSET)
+        # game‑over tracking
+        self._prev_alien_positions = None
+        self._static_frames = 0
+        self.game_over = False
 
-    # Alien positions
-    for i, base_addr in enumerate(ALIEN_SLOTS_ADDR):
-        state.aliens[i]["x"] = get_byte_from_memory(sock, base_addr + X_POS_SLOT_OFFSET)
-        state.aliens[i]["y"] = get_byte_from_memory(sock, base_addr + Y_POS_SLOT_OFFSET)
-        state.aliens[i]["x_speed"] = get_byte_from_memory(sock, base_addr + X_SPEED_SLOT_OFFSET)
-        state.aliens[i]["y_speed"] = get_byte_from_memory(sock, base_addr + Y_SPEED_SLOT_OFFSET)
+    def refresh(self, sock):        
+        # Jetman data
+        self.lives = get_byte_from_memory(sock, JETMAN_LIVES_ADDR)
+        self.level = get_byte_from_memory(sock, GAME_LEVEL_ADDR)    
+        self.jetman["x"] = get_byte_from_memory(sock, JETMAN_SLOT_ADDR + X_POS_SLOT_OFFSET)
+        self.jetman["y"] = get_byte_from_memory(sock, JETMAN_SLOT_ADDR + Y_POS_SLOT_OFFSET)
+        self.jetman["x_speed"] = get_byte_from_memory(sock, JETMAN_SLOT_ADDR + X_SPEED_SLOT_OFFSET)
+        self.jetman["y_speed"] = get_byte_from_memory(sock, JETMAN_SLOT_ADDR + Y_SPEED_SLOT_OFFSET)
 
-    return state
+        # Alien positions
+        for i, base_addr in enumerate(ALIEN_SLOTS_ADDR):
+            self.aliens[i]["x"] = get_byte_from_memory(sock, base_addr + X_POS_SLOT_OFFSET)
+            self.aliens[i]["y"] = get_byte_from_memory(sock, base_addr + Y_POS_SLOT_OFFSET)
+            self.aliens[i]["x_speed"] = get_byte_from_memory(sock, base_addr + X_SPEED_SLOT_OFFSET)
+            self.aliens[i]["y_speed"] = get_byte_from_memory(sock, base_addr + Y_SPEED_SLOT_OFFSET)
+
+        # now update game_over flag
+        self.update_game_over()
+
+    def update_game_over(self):
+        # if aliens dont move for these number of control loop steps, and there are 0 jetman lives, 
+        # ... then its game-over
+        STATIC_GAME_OVER_THRESHOLD_FRAMES = 20  
+
+        # only consider “over” once lives == 0
+        if self.lives and self.lives > 0:
+            self._static_frames = 0
+            self.game_over = False
+            return
+
+        # build current alien (x,y) list
+        curr = [(a["x"], a["y"]) for a in self.aliens]
+        if self._prev_alien_positions == curr:
+            self._static_frames += 1
+        else:
+            self._static_frames = 0
+
+        self._prev_alien_positions = curr
+
+        self.game_over = (self._static_frames >= STATIC_GAME_OVER_THRESHOLD_FRAMES)
 
 def print_game_state(state):
     out = []
